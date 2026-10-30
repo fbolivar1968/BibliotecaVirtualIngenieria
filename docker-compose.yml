@@ -1,0 +1,104 @@
+name: fobol-engineering-library
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: fobol-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fobol_engineering_kb}
+      POSTGRES_USER: ${POSTGRES_USER:-fobol_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-fobol_dev_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/scripts/01_init_schemas_and_extensions.sql:/docker-entrypoint-initdb.d/01_init_schemas_and_extensions.sql:ro
+      - ./database/scripts/02_create_tables_ddd_v2.sql:/docker-entrypoint-initdb.d/02_create_tables_ddd_v2.sql:ro
+      - ./database/scripts/03_seed_initial_data.sql:/docker-entrypoint-initdb.d/03_seed_initial_data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fobol_app} -d ${POSTGRES_DB:-fobol_engineering_kb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: fobol-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    container_name: fobol-backend
+    restart: unless-stopped
+    env_file:
+      - .env.example
+    environment:
+      POSTGRES_HOST: postgres
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-fobol_app}:${POSTGRES_PASSWORD:-fobol_dev_password}@postgres:5432/${POSTGRES_DB:-fobol_engineering_kb}
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/workspace/backend
+      - ./calculators:/workspace/calculators
+      - storage_data:/workspace/storage_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: infra/docker/backend.Dockerfile
+    container_name: fobol-worker
+    restart: unless-stopped
+    command: celery -A app.workers.celery_app worker --loglevel=info
+    env_file:
+      - .env.example
+    environment:
+      POSTGRES_HOST: postgres
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-fobol_app}:${POSTGRES_PASSWORD:-fobol_dev_password}@postgres:5432/${POSTGRES_DB:-fobol_engineering_kb}
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/workspace/backend
+      - ./calculators:/workspace/calculators
+      - storage_data:/workspace/storage_data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infra/docker/frontend.Dockerfile
+    container_name: fobol-frontend
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:
+

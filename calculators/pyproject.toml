@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fobol-calculators-engine"
+version = "0.1.0"
+description = "Motor normativo determinístico independiente (Decimal) para cálculos de ingeniería mecánica - Forjas Bolívar"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.6.8",
+    "mypy>=1.11.2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["golden_tests"]
+
